@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text Tidy – Plain Text Converter for Students</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --ink:#1c2230; --muted:#5d6678; --line:#dfe3ea;
+    --accent:#2f6fde; --accent-soft:#e7efff; --ok:#1f8a4c; --warn:#b4541a;
+    --radius:12px; --mono:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#14171d; --panel:#1c2029; --ink:#e7eaf0; --muted:#9aa3b5; --line:#2e3442;
+      --accent:#6a9dff; --accent-soft:#22304d; --ok:#4cc27f; --warn:#f0a067; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.45}
+  header{padding:22px 24px 8px;max-width:1400px;margin:0 auto}
+  h1{margin:0;font-size:24px;letter-spacing:-.01em}
+  header p{margin:4px 0 0;color:var(--muted)}
+  main{max-width:1400px;margin:0 auto;padding:12px 24px 40px;display:grid;grid-template-columns:320px 1fr;gap:18px}
+  @media (max-width:900px){ main{grid-template-columns:1fr} aside{order:2} }
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+  aside{padding:14px;align-self:start;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+  @media (max-width:900px){ aside{position:static;max-height:none} }
+  details{border-bottom:1px solid var(--line);padding:8px 0}
+  details:last-of-type{border-bottom:0}
+  summary{cursor:pointer;font-weight:600;padding:4px 0;list-style:none;display:flex;justify-content:space-between;align-items:center}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"▸";color:var(--muted);transition:transform .15s}
+  details[open] summary::after{transform:rotate(90deg)}
+  .count-badge{font-weight:500;font-size:12px;color:var(--accent);background:var(--accent-soft);border-radius:99px;padding:1px 8px;margin-left:auto;margin-right:8px}
+  label.opt{display:flex;gap:8px;align-items:flex-start;padding:4px 2px;cursor:pointer;font-size:14px}
+  label.opt input{margin-top:3px;accent-color:var(--accent)}
+  label.opt small{display:block;color:var(--muted);font-size:12px}
+  .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+  .seg{display:flex;flex-wrap:wrap;gap:6px;padding:6px 0}
+  .seg button, .btn{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 10px;cursor:pointer}
+  .seg button:hover,.btn:hover{border-color:var(--accent)}
+  .seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .field{display:flex;flex-direction:column;gap:4px;margin:6px 0;font-size:13px;color:var(--muted)}
+  .field input[type=text]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .editors{display:grid;grid-template-columns:1fr 1fr;gap:18px;min-width:0}
+  @media (max-width:1100px){ .editors{grid-template-columns:1fr} }
+  .ed{display:flex;flex-direction:column;min-width:0}
+  .ed-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line);gap:8px;flex-wrap:wrap}
+  .ed-head h2{font-size:15px;margin:0}
+  .ed-head .tools{display:flex;gap:6px;flex-wrap:wrap}
+  textarea{font-family:var(--mono);font-size:14px;line-height:1.55;border:0;outline:0;resize:vertical;min-height:420px;padding:14px;background:transparent;color:var(--ink);width:100%}
+  textarea::placeholder{color:var(--muted)}
+  .stats{display:flex;flex-wrap:wrap;gap:4px 14px;padding:8px 14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+  .stats b{color:var(--ink);font-weight:600}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--panel);padding:9px 16px;border-radius:99px;font-size:14px;opacity:0;transition:.2s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .changes{font-size:12.5px;color:var(--ok)}
+  .hint{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+  .err{color:var(--warn);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Text Tidy</h1>
+  <p>Paste text from Word, Google Docs, a website or a PDF. Pick your options on the left and copy the clean result.</p>
+</header>
+
+<main>
+  <aside class="panel" id="opts">
+    <div class="presets">
+      <button class="btn primary" data-preset="clean" title="Strip formatting, fix quotes and spacing">✨ Quick clean</button>
+      <button class="btn" data-preset="pdf" title="Join broken lines copied from PDFs">📄 Fix PDF text</button>
+      <button class="btn" data-preset="none">Reset</button>
+    </div>
+
+    <details open>
+      <summary>Formatting &amp; characters <span class="count-badge" data-group="fmt"></span></summary>
+      <label class="opt"><input type="checkbox" id="stripHtml" data-g="fmt"><span>Remove HTML tags<small>e.g. &lt;b&gt;, &lt;p&gt;, &lt;br&gt;</small></span></label>
+      <label class="opt"><input type="checkbox" id="decodeEnt" data-g="fmt"><span>Decode HTML entities<small>&amp;amp; → &amp;, &amp;nbsp; → space</small></span></label>
+      <label class="opt"><input type="checkbox" id="stripMd" data-g="fmt"><span>Remove Markdown<small>**bold**, # headings, [links](url), - bullets</small></span></label>
+      <label class="opt"><input type="checkbox" id="smartQuotes" data-g="fmt"><span>Straighten quotes<small>“ ” ‘ ’ → " '</small></span></label>
+      <label class="opt"><input type="checkbox" id="dashes" data-g="fmt"><span>Simplify dashes &amp; ellipses<small>— – → - &nbsp; … → ...</small></span></label>
+      <label class="opt"><input type="checkbox" id="invisible" data-g="fmt"><span>Remove hidden characters<small>non-breaking &amp; zero-width spaces, soft hyphens</small></span></label>
+      <label class="opt"><input type="checkbox" id="bullets" data-g="fmt"><span>Remove bullet symbols<small>• ◦ ▪ ➢ at the start of lines</small></span></label>
+    </details>
+
+    <details open>
+      <summary>Spaces &amp; line breaks <span class="count-badge" data-group="ws"></span></summary>
+      <label class="opt"><input type="checkbox" id="extraSpaces" data-g="ws"><span>Remove extra spaces<small>double spaces → single</small></span></label>
+      <label class="opt"><input type="checkbox" id="trimLines" data-g="ws"><span>Trim each line<small>remove spaces at start/end of lines</small></span></label>
+      <label class="opt"><input type="checkbox" id="collapseBlank" data-g="ws"><span>Collapse blank lines<small>keep one blank line between paragraphs</small></span></label>
+      <label class="opt"><input type="checkbox" id="removeEmpty" data-g="ws"><span>Remove all empty lines</span></label>
+      <label class="opt"><input type="checkbox" id="joinLines" data-g="ws"><span>Join broken lines (keep paragraphs)<small>best for text copied from PDFs</small></span></label>
+      <label class="opt"><input type="checkbox" id="fixHyphen" data-g="ws"><span>Fix words split across lines<small>"engin-<br>eering" → "engineering"</small></span></label>
+      <label class="opt"><input type="checkbox" id="removeBreaks" data-g="ws"><span>Remove ALL line breaks<small>turns everything into one paragraph</small></span></label>
+      <label class="opt"><input type="checkbox" id="removeAllSpaces" data-g="ws"><span>Remove all spaces</span></label>
+    </details>
+
+    <details>
+      <summary>Remove content <span class="count-badge" data-group="rm"></span></summary>
+      <label class="opt"><input type="checkbox" id="rmUrls" data-g="rm"><span>Web links (URLs)</span></label>
+      <label class="opt"><input type="checkbox" id="rmEmails" data-g="rm"><span>Email addresses</span></label>
+      <label class="opt"><input type="checkbox" id="rmCitations" data-g="rm"><span>Reference markers<small>[1], [12], [citation needed] — e.g. from Wikipedia</small></span></label>
+      <label class="opt"><input type="checkbox" id="rmEmoji" data-g="rm"><span>Emoji</span></label>
+      <label class="opt"><input type="checkbox" id="rmHashtags" data-g="rm"><span>Hashtags &amp; @mentions</span></label>
+      <label class="opt"><input type="checkbox" id="rmNumbers" data-g="rm"><span>Numbers</span></label>
+      <label class="opt"><input type="checkbox" id="rmPunct" data-g="rm"><span>All punctuation</span></label>
+      <label class="opt"><input type="checkbox" id="rmSpecial" data-g="rm"><span>Special symbols<small>keeps letters, numbers &amp; normal punctuation</small></span></label>
+      <label class="opt"><input type="checkbox" id="dedupe" data-g="rm"><span>Duplicate lines</span></label>
+    </details>
+
+    <details open>
+      <summary>Letter case</summary>
+      <div class="seg" id="caseSeg">
+        <button data-case="" class="on">Unchanged</button>
+        <button data-case="sentence">Sentence case</button>
+        <button data-case="lower">lowercase</button>
+        <button data-case="upper">UPPERCASE</button>
+        <button data-case="title">Title Case</button>
+        <button data-case="capital">Capitalise Each Word</button>
+        <button data-case="invert">iNVERT cASE</button>
+      </div>
+      <div class="hint">Tip: Sentence and lowercase can't tell which words are names (e.g. Adelaide), so check proper nouns afterwards.</div>
+      <div class="hint">Coding / file-name styles (applied per line):</div>
+      <div class="seg" id="caseSeg2">
+        <button data-case="camel">camelCase</button>
+        <button data-case="pascal">PascalCase</button>
+        <button data-case="snake">snake_case</button>
+        <button data-case="kebab">kebab-case</button>
+        <button data-case="dot">dot.case</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Find &amp; replace <span class="count-badge" data-group="fr"></span></summary>
+      <div class="field">Find<input type="text" id="findTxt" placeholder="word or phrase"></div>
+      <div class="field">Replace with<input type="text" id="replTxt" placeholder="(leave empty to delete)"></div>
+      <div class="row">
+        <label class="opt"><input type="checkbox" id="frCase"><span>Match case</span></label>
+        <label class="opt"><input type="checkbox" id="frWhole"><span>Whole words</span></label>
+        <label class="opt"><input type="checkbox" id="frRegex"><span>Regex</span></label>
+      </div>
+      <div id="frInfo" class="hint"></div>
+    </details>
+
+    <details>
+      <summary>Lines &amp; lists <span class="count-badge" data-group="ln"></span></summary>
+      <div class="seg" id="sortSeg">
+        <button data-sort="" class="on">No sorting</button>
+        <button data-sort="az">Sort A → Z</button>
+        <button data-sort="za">Sort Z → A</button>
+        <button data-sort="rev">Reverse order</button>
+        <button data-sort="len">Shortest first</button>
+      </div>
+      <label class="opt"><input type="checkbox" id="numberLines" data-g="ln"><span>Number each line (1. 2. 3.)</span></label>
+      <label class="opt"><input type="checkbox" id="bulletLines" data-g="ln"><span>Add a dash bullet to each line</span></label>
+      <label class="opt"><input type="checkbox" id="commaList" data-g="ln"><span>Lines → comma-separated list</span></label>
+    </details>
+  </aside>
+
+  <section class="editors">
+    <div class="panel ed">
+      <div class="ed-head">
+        <h2>Your text</h2>
+        <div class="tools">
+          <button class="btn" id="sampleBtn" title="Load an example to try the options">Try an example</button>
+          <button class="btn" id="clearBtn">Clear</button>
+        </div>
+      </div>
+      <textarea id="input" placeholder="Paste your text here (Ctrl+V or ⌘V)…" spellcheck="false"></textarea>
+      <div class="stats" id="inStats"></div>
+    </div>
+
+    <div class="panel ed">
+      <div class="ed-head">
+        <h2>Clean text <span class="changes" id="changes"></span></h2>
+        <div class="tools">
+          <button class="btn" id="undoBtn" hidden>Undo</button>
+          <button class="btn" id="useBtn" title="Move the result into the left box to keep working on it">↺ Use as input</button>
+          <button class="btn" id="dlBtn" title="Save as a .txt file">Download .txt</button>
+          <button class="btn primary" id="copyBtn">Copy</button>
+        </div>
+      </div>
+      <textarea id="output" readonly placeholder="Your cleaned text appears here as you type."></textarea>
+      <div class="stats" id="outStats"></div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const input = $('input'), output = $('output');
+  const checks = [...document.querySelectorAll('#opts input[type=checkbox]')];
+  let caseMode = '', sortMode = '', undoStack = null;
+
+  const PRESETS = {
+    clean: ['stripHtml','decodeEnt','stripMd','smartQuotes','dashes','invisible','bullets','extraSpaces','trimLines','collapseBlank'],
+    pdf:   ['invisible','smartQuotes','dashes','extraSpaces','trimLines','collapseBlank','joinLines','fixHyphen'],
+    none:  []
+  };
+
+  /* ---------- helpers ---------- */
+  const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const mapLines = (t, fn) => t.split('\n').map(fn).join('\n');
+
+  function decodeEntities(t){
+    const ta = document.createElement('textarea');
+    return t.replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]{1,31});/gi, m => { ta.innerHTML = m; return ta.value; });
+  }
+  function stripHtml(t){
+    return t.replace(/<(script|style)[\s\S]*?<\/\1>/gi,'')
+            .replace(/<br\s*\/?>/gi,'\n')
+            .replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi,'\n')
+            .replace(/<li[^>]*>/gi,'')
+            .replace(/<[^>]+>/g,'');
+  }
+  function stripMarkdown(t){
+    return t
+      .replace(/```[^\n]*\n?/g,'')
+      .replace(/`([^`]+)`/g,'$1')
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g,'$1')
+      .replace(/^\s{0,3}#{1,6}\s+/gm,'')
+      .replace(/^\s{0,3}>\s?/gm,'')
+      .replace(/^\s*([-*+])\s+/gm,'')
+      .replace(/^\s*(\*\s*){3,}$|^\s*(-\s*){3,}$|^\s*(_\s*){3,}$/gm,'')
+      .replace(/(\*\*|__)(.+?)\1/g,'$2')
+      .replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?!\w)/g,'$1$2')
+      .replace(/(^|[^_\w])_(?!\s)([^_\n]+?)_(?!\w)/g,'$1$2')
+      .replace(/~~(.+?)~~/g,'$1');
+  }
+  const SMALL = new Set('a an and as at but by for from in into nor of on onto or over per so the to up via vs with yet'.split(' '));
+  function titleCase(t){
+    return mapLines(t, line => {
+      const words = line.toLowerCase().split(/(\s+)/);
+      const idx = words.map((w,i)=>/\S/.test(w)?i:-1).filter(i=>i>=0);
+      const first = idx[0], last = idx[idx.length-1];
+      return words.map((w,i) => {
+        if (!/\S/.test(w)) return w;
+        const prev = i>1 ? words[i-2] : '';
+        const afterColon = /[:—–-]$/.test(prev);
+        if (i!==first && i!==last && !afterColon && SMALL.has(w.replace(/[^a-z]/g,''))) return w;
+        return w.replace(/[\p{L}\p{N}]/u, c => c.toUpperCase());
+      }).join('');
+    });
+  }
+  function sentenceCase(t){
+    let s = t.toLowerCase();
+    s = s.replace(/(^\s*|(?<!\.\.)[.!?]["')\]]*\s+|\n\s*)(\p{L})/gu, (m,a,b) => a + b.toUpperCase());
+    s = s.replace(/\bi\b(?=[\s'’.,!?;:]|$)/g, 'I');
+    return s;
+  }
+  function words(line){
+    return line.normalize('NFKD').replace(/[̀-ͯ]/g,'')
+      .replace(/([a-z0-9])([A-Z])/g,'$1 $2')
+      .split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  }
+  function codeCase(t, mode){
+    return mapLines(t, line => {
+      const w = words(line); if (!w.length) return line;
+      const lw = w.map(x=>x.toLowerCase());
+      const cap = x => x.charAt(0).toUpperCase()+x.slice(1);
+      switch(mode){
+        case 'camel': return lw[0] + lw.slice(1).map(cap).join('');
+        case 'pascal': return lw.map(cap).join('');
+        case 'snake': return lw.join('_');
+        case 'kebab': return lw.join('-');
+        case 'dot': return lw.join('.');
+      }
+    });
+  }
+
+  /* ---------- pipeline ---------- */
+  function convert(t){
+    const o = Object.fromEntries(checks.map(c => [c.id, c.checked]));
+    t = t.replace(/\r\n?/g,'\n');
+
+    if (o.stripHtml) t = stripHtml(t);
+    if (o.decodeEnt) t = decodeEntities(t);
+    if (o.stripMd) t = stripMarkdown(t);
+    if (o.smartQuotes) t = t.replace(/[“”„‟″«»]/g,'"').replace(/[‘’‚‛′‹›]/g,"'");
+    if (o.dashes) t = t.replace(/\s*[—―]\s*/g,' - ').replace(/[–‒‐‑−]/g,'-').replace(/…/g,'...');
+    if (o.invisible) t = t.replace(/[  -   　]/g,' ').replace(/[​-‍⁠﻿­]/g,'').replace(/\t/g,' ');
+    if (o.bullets) t = t.replace(/^[ \t]*[•◦▪▫●○■□►▸➢➤✓✔·∙‣⁃–\-*][ \t]+/gm,'');
+
+    if (o.rmCitations) t = t.replace(/\[(\d+(?:[–,-]\s*\d+)*|citation needed|note \d+|[a-z])\]/gi,'');
+    if (o.rmUrls) t = t.replace(/\b(?:https?:\/\/|www\.)[^\s<>()"']+[^\s<>()"'.,;:!?]/gi,'');
+    if (o.rmEmails) t = t.replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g,'');
+    if (o.rmEmoji) t = t.replace(/(\p{Extended_Pictographic}|\p{Regional_Indicator})(️|‍|\p{Emoji_Modifier})*/gu,'').replace(/[️‍]/g,'');
+    if (o.rmHashtags) t = t.replace(/(^|\s)[#@][\p{L}\p{N}_]+/gu,'$1');
+    if (o.rmNumbers) t = t.replace(/\p{N}+/gu,'');
+    if (o.rmPunct) t = t.replace(/[\p{P}]/gu,'');
+    if (o.rmSpecial) t = t.replace(/[^\p{L}\p{N}\s.,;:!?'"()\-&/%$]/gu,'');
+
+    if (o.dedupe){ const seen = new Set(); t = t.split('\n').filter(l => { const k = l.trim(); if (!k) return true; if (seen.has(k)) return false; seen.add(k); return true; }).join('\n'); }
+
+    if (o.fixHyphen) t = t.replace(/(\p{L})-[ \t]*\n[ \t]*(\p{Ll})/gu,'$1$2');
+    if (o.joinLines) t = t.split(/\n[ \t]*\n/).map(p => p.replace(/[ \t]*\n[ \t]*/g,' ')).join('\n\n');
+    if (o.removeBreaks) t = t.replace(/\s*\n\s*/g,' ');
+
+    if (o.extraSpaces) t = t.replace(/[ \t]{2,}/g,' ').replace(/ +([.,;:!?)])/g,'$1').replace(/\( +/g,'(');
+    if (o.trimLines) t = mapLines(t, l => l.trim());
+    if (o.removeEmpty) t = t.split('\n').filter(l => l.trim()).join('\n');
+    else if (o.collapseBlank) t = t.replace(/\n[ \t]*(\n[ \t]*)+\n/g,'\n\n');
+    if (o.removeAllSpaces) t = t.replace(/[ \t]+/g,'');
+
+
+    switch(caseMode){
+      case 'lower': t = t.toLowerCase(); break;
+      case 'upper': t = t.toUpperCase(); break;
+      case 'title': t = titleCase(t); break;
+      case 'sentence': t = sentenceCase(t); break;
+      case 'capital': t = t.toLowerCase().replace(/(^|[\s(\["'-])(\p{L})/gu,(m,a,b)=>a+b.toUpperCase()); break;
+      case 'invert': t = [...t].map(c => c===c.toUpperCase()? c.toLowerCase() : c.toUpperCase()).join(''); break;
+      case 'camel': case 'pascal': case 'snake': case 'kebab': case 'dot': t = codeCase(t, caseMode); break;
+    }
+
+    // Find & replace
+    const f = $('findTxt').value; $('frInfo').textContent=''; $('frInfo').className='hint';
+    if (f){
+      try{
+        let src = $('frRegex').checked ? f : escRe(f);
+        if ($('frWhole').checked) src = '\\b(?:' + src + ')\\b';
+        const re = new RegExp(src, 'g' + ($('frCase').checked ? '' : 'i') + 'u');
+        const n = (t.match(re) || []).length;
+        t = t.replace(re, $('replTxt').value);
+        $('frInfo').textContent = n + (n===1 ? ' match replaced' : ' matches replaced');
+      } catch(e){ $('frInfo').textContent = 'That pattern is not valid.'; $('frInfo').className='err'; }
+    }
+
+    // Lines
+    if (sortMode){
+      let lines = t.split('\n').filter(l => l.trim());
+      const coll = new Intl.Collator('en',{sensitivity:'base',numeric:true});
+      if (sortMode==='az') lines.sort(coll.compare);
+      if (sortMode==='za') lines.sort((a,b)=>coll.compare(b,a));
+      if (sortMode==='rev') lines.reverse();
+      if (sortMode==='len') lines.sort((a,b)=>a.length-b.length);
+      t = lines.join('\n');
+    }
+    if (o.commaList) t = t.split('\n').map(l=>l.trim()).filter(Boolean).join(', ');
+    else {
+      if (o.numberLines){ let n=0; t = mapLines(t, l => l.trim() ? (++n)+'. '+l : l); }
+      else if (o.bulletLines) t = mapLines(t, l => l.trim() ? '- '+l : l);
+    }
+    return t;
+  }
+
+  /* ---------- stats ---------- */
+  function stats(t){
+    const w = (t.match(/[\p{L}\p{N}][\p{L}\p{N}'’\-]*/gu) || []).length;
+    const sent = t.trim() ? (t.match(/[^.!?\n]+[.!?]+(?=\s|$)/g) || []).length || (t.trim()?1:0) : 0;
+    const paras = t.split(/\n\s*\n/).filter(p=>p.trim()).length;
+    const lines = t ? t.split('\n').length : 0;
+    const mins = Math.max(1, Math.round(w/230));
+    return `<span><b>${w.toLocaleString()}</b> words</span><span><b>${t.length.toLocaleString()}</b> characters</span><span><b>${t.replace(/\s/g,'').length.toLocaleString()}</b> without spaces</span><span><b>${sent}</b> sentences</span><span><b>${paras}</b> paragraphs</span><span><b>${lines}</b> lines</span>${w?`<span>~${mins} min read</span>`:''}`;
+  }
+
+  /* ---------- update ---------- */
+  function update(){
+    const out = convert(input.value);
+    output.value = out;
+    $('inStats').innerHTML = stats(input.value);
+    $('outStats').innerHTML = stats(out);
+    const diff = input.value.length - out.length;
+    $('changes').textContent = !input.value ? '' : out === input.value.replace(/\r\n?/g,'\n') ? '· no changes' : diff > 0 ? `· ${diff.toLocaleString()} characters removed` : '· updated';
+    document.querySelectorAll('.count-badge').forEach(b => {
+      const n = checks.filter(c => c.dataset.g===b.dataset.group && c.checked).length + (b.dataset.group==='fr' && $('findTxt').value ? 1 : 0) + (b.dataset.group==='ln' && sortMode ? 1 : 0);
+      b.textContent = n ? n + ' on' : '';
+    });
+    save();
+  }
+
+  /* ---------- persistence (optional) ---------- */
+  function save(){ try{ localStorage.setItem('textTidyOpts', JSON.stringify({c:checks.filter(c=>c.checked).map(c=>c.id), caseMode, sortMode})); }catch(e){} }
+  function load(){
+    try{ const s = JSON.parse(localStorage.getItem('textTidyOpts')); if (s){ checks.forEach(c=>c.checked=s.c.includes(c.id)); setSeg('case', s.caseMode||''); setSeg('sort', s.sortMode||''); return true; } }catch(e){}
+    return false;
+  }
+
+  function setSeg(kind, val){
+    if (kind==='case'){ caseMode = val; document.querySelectorAll('[data-case]').forEach(b=>b.classList.toggle('on', b.dataset.case===val)); }
+    else { sortMode = val; document.querySelectorAll('[data-sort]').forEach(b=>b.classList.toggle('on', b.dataset.sort===val)); }
+  }
+
+  function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),1600); }
+
+  /* ---------- events ---------- */
+  input.addEventListener('input', update);
+  checks.forEach(c => c.addEventListener('change', () => {
+    if (c.id==='removeEmpty' && c.checked) $('collapseBlank').checked = false;
+    if (c.id==='collapseBlank' && c.checked) $('removeEmpty').checked = false;
+    if (c.id==='numberLines' && c.checked) $('bulletLines').checked = false;
+    if (c.id==='bulletLines' && c.checked) $('numberLines').checked = false;
+    update();
+  }));
+  ['findTxt','replTxt'].forEach(id => $(id).addEventListener('input', update));
+  document.querySelectorAll('[data-case]').forEach(b => b.addEventListener('click', () => { setSeg('case', b.dataset.case); update(); }));
+  document.querySelectorAll('[data-sort]').forEach(b => b.addEventListener('click', () => { setSeg('sort', b.dataset.sort); update(); }));
+  document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
+    const p = PRESETS[b.dataset.preset]; checks.forEach(c => c.checked = p.includes(c.id));
+    if (b.dataset.preset==='none'){ setSeg('case',''); setSeg('sort',''); $('findTxt').value=''; $('replTxt').value=''; }
+    update(); toast(b.dataset.preset==='none' ? 'All options cleared' : 'Preset applied');
+  }));
+
+  $('copyBtn').addEventListener('click', async () => {
+    if (!output.value) return toast('Nothing to copy yet');
+    try { await navigator.clipboard.writeText(output.value); toast('Copied to clipboard ✓'); }
+    catch(e){ output.focus(); output.select(); try{ document.execCommand('copy'); toast('Copied ✓'); }catch(_){ toast('Press Ctrl+C / ⌘C to copy'); } }
+  });
+  $('dlBtn').addEventListener('click', () => {
+    if (!output.value) return toast('Nothing to download yet');
+    const url = URL.createObjectURL(new Blob([output.value], {type:'text/plain;charset=utf-8'}));
+    const a = document.createElement('a'); a.href = url; a.download = 'clean-text.txt';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  $('useBtn').addEventListener('click', () => {
+    if (!output.value) return;
+    undoStack = input.value; input.value = output.value; $('undoBtn').hidden = false; update(); toast('Result moved to input');
+  });
+  $('undoBtn').addEventListener('click', () => {
+    if (undoStack===null) return; input.value = undoStack; undoStack = null; $('undoBtn').hidden = true; update();
+  });
+  $('clearBtn').addEventListener('click', () => { if (input.value) undoStack = input.value, $('undoBtn').hidden = false; input.value=''; update(); input.focus(); });
+
+  $('sampleBtn').addEventListener('click', () => {
+    input.value =
+`<p><b>Renewable  Energy</b> in South Australia&nbsp;&amp; beyond</p>
+“South Australia now generates more than 70% of its electricity from wind and solar,” the report states [3].
+The state’s grid has become a test case for engin-
+eering solutions such as large-scale batteries… and
+pumped hydro storage.     See https://www.example.com/energy for details.
+
+
+•   Wind farms
+•   Rooftop solar ☀️
+•   Grid-scale batteries 🔋
+•   Wind farms
+Contact: student@example.edu.au #STEM #energy`;
+    update(); toast('Example loaded – try “Quick clean”');
+  });
+
+  if (!load()) PRESETS.clean.forEach(id => $(id).checked = true);
+  update();
+})();
+</script>
+</body>
+</html>
