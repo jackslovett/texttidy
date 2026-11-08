@@ -77,13 +77,21 @@
     </div>
 
     <details open>
+      <summary>Rebuild as plain text</summary>
+      <div class="hint" style="margin-top:0">The text is rebuilt one character at a time. Only approved characters are copied across; lookalikes (curly quotes, long dashes, special spaces) are swapped for plain versions, and anything else, including hidden characters, is left out.</div>
+      <div class="seg" id="rebuildSeg">
+        <button data-rebuild="strict" class="on" title="A–Z, 0–9 and the punctuation on a standard keyboard">Keyboard characters only</button>
+        <button data-rebuild="intl" title="Also keeps accented letters (é, ü), other alphabets and symbols like ° € ±">Allow accents &amp; other languages</button>
+        <button data-rebuild="off" title="Characters are left exactly as pasted">Off</button>
+      </div>
+      <div id="rebuildInfo" class="hint"></div>
+    </details>
+
+    <details open>
       <summary>Formatting &amp; characters <span class="count-badge" data-group="fmt"></span></summary>
       <label class="opt"><input type="checkbox" id="stripHtml" data-g="fmt"><span>Remove HTML tags<small>e.g. &lt;b&gt;, &lt;p&gt;, &lt;br&gt;</small></span></label>
       <label class="opt"><input type="checkbox" id="decodeEnt" data-g="fmt"><span>Decode HTML entities<small>&amp;amp; → &amp;, &amp;nbsp; → space</small></span></label>
       <label class="opt"><input type="checkbox" id="stripMd" data-g="fmt"><span>Remove Markdown<small>**bold**, # headings, [links](url), - bullets</small></span></label>
-      <label class="opt"><input type="checkbox" id="smartQuotes" data-g="fmt"><span>Straighten quotes<small>“ ” ‘ ’ → " '</small></span></label>
-      <label class="opt"><input type="checkbox" id="dashes" data-g="fmt"><span>Simplify dashes &amp; ellipses<small>— – → - &nbsp; … → ...</small></span></label>
-      <label class="opt"><input type="checkbox" id="invisible" data-g="fmt"><span>Remove hidden characters<small>non-breaking &amp; zero-width spaces, soft hyphens</small></span></label>
       <label class="opt"><input type="checkbox" id="bullets" data-g="fmt"><span>Remove bullet symbols<small>• ◦ ▪ ➢ at the start of lines</small></span></label>
     </details>
 
@@ -197,11 +205,11 @@
   const $ = id => document.getElementById(id);
   const input = $('input'), output = $('output');
   const checks = [...document.querySelectorAll('#opts input[type=checkbox]')];
-  let caseMode = '', sortMode = '', undoStack = null;
+  let caseMode = '', sortMode = '', rebuildMode = 'strict', undoStack = null, rebuildStats = null;
 
   const PRESETS = {
-    clean: ['stripHtml','decodeEnt','stripMd','smartQuotes','dashes','invisible','bullets','extraSpaces','trimLines','collapseBlank'],
-    pdf:   ['invisible','smartQuotes','dashes','extraSpaces','trimLines','collapseBlank','joinLines','fixHyphen'],
+    clean: ['stripHtml','decodeEnt','stripMd','bullets','extraSpaces','trimLines','collapseBlank'],
+    pdf:   ['extraSpaces','trimLines','collapseBlank','joinLines','fixHyphen'],
     none:  []
   };
 
@@ -276,6 +284,57 @@
     });
   }
 
+  /* ---------- character-by-character rebuild ---------- */
+  // Lookalike characters and the plain version copied across instead
+  const MAP = {
+    '‘':"'", '’':"'", '‚':"'", '‛':"'", '′':"'", '‹':"'", '›':"'",
+    '“':'"', '”':'"', '„':'"', '‟':'"', '″':'"', '«':'"', '»':'"',
+    '‐':'-', '‑':'-', '‒':'-', '–':'-', '−':'-', '⁃':'-', '—':' - ', '―':' - ',
+    '…':'...', '⁄':'/', '∕':'/',
+    '•':'-', '◦':'-', '▪':'-', '▫':'-', '●':'-', '○':'-', '■':'-', '□':'-',
+    '►':'-', '▸':'-', '➢':'-', '➤':'-', '‣':'-', '·':'-', '∙':'-',
+    '✓':'*', '✔':'*', '→':'->', '←':'<-', '⇒':'=>',
+    '×':'x', '÷':'/', '≤':'<=', '≥':'>=', '≠':'!=', '≈':'~', '±':'+/-',
+    '²':'^2', '³':'^3', '¹':'^1',
+    '°':' degrees', '€':'EUR', '£':'GBP', '¥':'JPY', '¢':'c',
+    '©':'(c)', '®':'(R)', '™':'(TM)', '§':'Section ', '¶':'',
+    '
+':'\n', '
+':'\n\n', '\t':' '
+  };
+  // In "accents & other languages" mode these symbols are kept rather than converted
+  const INTL_KEEP = new Set(['°','€','£','¥','¢','©','®','™','§','×','÷','±','≤','≥','≠','≈','²','³','¹','→','←']);
+  const SPECIAL = { 'ß':'ss', 'æ':'ae', 'Æ':'AE', 'œ':'oe', 'Œ':'OE', 'ø':'o', 'Ø':'O', 'đ':'d', 'Đ':'D', 'ł':'l', 'Ł':'L', 'ı':'i' };
+
+  function rebuild(t, mode){
+    let out = '', converted = 0, dropped = 0;
+    if (mode === 'strict') t = t.replace(/\s?\u00B0\s?([CF])\b/g, ' degrees $1');
+    for (const ch of t){
+      // 1. Approved plain characters: copied across unchanged
+      if (ch === '\n' || (ch >= ' ' && ch <= '~')) { out += ch; continue; }
+      if (mode === 'intl' && INTL_KEEP.has(ch)) { out += ch; continue; }
+      // 2. Known lookalike: replaced with its plain version
+      if (ch in MAP) { out += MAP[ch]; converted++; continue; }
+      // 3. Compatibility forms (ligatures like "fi", full-width letters, special spaces)
+      const k = ch.normalize('NFKC');
+      if (k !== ch && /^[ -~]+$/.test(k)) { out += k; converted++; continue; }
+      // In "accents & other languages" mode, letters, digits and punctuation of any language are kept
+      if (mode === 'intl' && /[\p{L}\p{M}\p{N}\p{P}\p{Sc}]/u.test(ch)) { out += ch; continue; }
+      // 4. Accented letters -> base letter (keyboard-only mode)
+      if (mode === 'strict'){
+        if (ch in SPECIAL) { out += SPECIAL[ch]; converted++; continue; }
+        const base = ch.normalize('NFD').replace(/\p{M}/gu,'');
+        if (base && /^[A-Za-z]+$/.test(base)) { out += base; converted++; continue; }
+      }
+      // 5. Any other kind of space -> normal space
+      if (/\s/u.test(ch)) { out += ' '; converted++; continue; }
+      // 6. Everything else (hidden/control characters, emoji, unsupported symbols) is not copied
+      dropped++;
+    }
+    rebuildStats = { converted, dropped };
+    return out;
+  }
+
   /* ---------- pipeline ---------- */
   function convert(t){
     const o = Object.fromEntries(checks.map(c => [c.id, c.checked]));
@@ -284,9 +343,8 @@
     if (o.stripHtml) t = stripHtml(t);
     if (o.decodeEnt) t = decodeEntities(t);
     if (o.stripMd) t = stripMarkdown(t);
-    if (o.smartQuotes) t = t.replace(/[“”„‟″«»]/g,'"').replace(/[‘’‚‛′‹›]/g,"'");
-    if (o.dashes) t = t.replace(/\s*[—―]\s*/g,' - ').replace(/[–‒‐‑−]/g,'-').replace(/…/g,'...');
-    if (o.invisible) t = t.replace(/[  -   　]/g,' ').replace(/[​-‍⁠﻿­]/g,'').replace(/\t/g,' ');
+    rebuildStats = null;
+    if (rebuildMode !== 'off') t = rebuild(t.replace(/[ \t]*[\u2014\u2015][ \t]*/g,'\u2014'), rebuildMode);
     if (o.bullets) t = t.replace(/^[ \t]*[•◦▪▫●○■□►▸➢➤✓✔·∙‣⁃–\-*][ \t]+/gm,'');
 
     if (o.rmCitations) t = t.replace(/\[(\d+(?:[–,-]\s*\d+)*|citation needed|note \d+|[a-z])\]/gi,'');
@@ -370,6 +428,12 @@
     $('outStats').innerHTML = stats(out);
     const diff = input.value.length - out.length;
     $('changes').textContent = !input.value ? '' : out === input.value.replace(/\r\n?/g,'\n') ? '· no changes' : diff > 0 ? `· ${diff.toLocaleString()} characters removed` : '· updated';
+    const ri = $('rebuildInfo');
+    if (rebuildMode === 'off') ri.textContent = 'Off: characters are left exactly as pasted.';
+    else if (!input.value || !rebuildStats) ri.textContent = '';
+    else ri.textContent = (rebuildStats.converted || rebuildStats.dropped)
+      ? `${rebuildStats.converted} character${rebuildStats.converted===1?'':'s'} converted to a plain version, ${rebuildStats.dropped} hidden or unsupported character${rebuildStats.dropped===1?'':'s'} left out.`
+      : 'Every character was already plain text.';
     document.querySelectorAll('.count-badge').forEach(b => {
       const n = checks.filter(c => c.dataset.g===b.dataset.group && c.checked).length + (b.dataset.group==='fr' && $('findTxt').value ? 1 : 0) + (b.dataset.group==='ln' && sortMode ? 1 : 0);
       b.textContent = n ? n + ' on' : '';
@@ -378,14 +442,15 @@
   }
 
   /* ---------- persistence (optional) ---------- */
-  function save(){ try{ localStorage.setItem('textTidyOpts', JSON.stringify({c:checks.filter(c=>c.checked).map(c=>c.id), caseMode, sortMode})); }catch(e){} }
+  function save(){ try{ localStorage.setItem('textTidyOpts', JSON.stringify({c:checks.filter(c=>c.checked).map(c=>c.id), caseMode, sortMode, rebuildMode})); }catch(e){} }
   function load(){
-    try{ const s = JSON.parse(localStorage.getItem('textTidyOpts')); if (s){ checks.forEach(c=>c.checked=s.c.includes(c.id)); setSeg('case', s.caseMode||''); setSeg('sort', s.sortMode||''); return true; } }catch(e){}
+    try{ const s = JSON.parse(localStorage.getItem('textTidyOpts')); if (s){ checks.forEach(c=>c.checked=s.c.includes(c.id)); setSeg('case', s.caseMode||''); setSeg('sort', s.sortMode||''); setSeg('rebuild', s.rebuildMode||'strict'); return true; } }catch(e){}
     return false;
   }
 
   function setSeg(kind, val){
     if (kind==='case'){ caseMode = val; document.querySelectorAll('[data-case]').forEach(b=>b.classList.toggle('on', b.dataset.case===val)); }
+    else if (kind==='rebuild'){ rebuildMode = val; document.querySelectorAll('[data-rebuild]').forEach(b=>b.classList.toggle('on', b.dataset.rebuild===val)); }
     else { sortMode = val; document.querySelectorAll('[data-sort]').forEach(b=>b.classList.toggle('on', b.dataset.sort===val)); }
   }
 
@@ -402,9 +467,11 @@
   }));
   ['findTxt','replTxt'].forEach(id => $(id).addEventListener('input', update));
   document.querySelectorAll('[data-case]').forEach(b => b.addEventListener('click', () => { setSeg('case', b.dataset.case); update(); }));
+  document.querySelectorAll('[data-rebuild]').forEach(b => b.addEventListener('click', () => { setSeg('rebuild', b.dataset.rebuild); update(); }));
   document.querySelectorAll('[data-sort]').forEach(b => b.addEventListener('click', () => { setSeg('sort', b.dataset.sort); update(); }));
   document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
     const p = PRESETS[b.dataset.preset]; checks.forEach(c => c.checked = p.includes(c.id));
+    setSeg('rebuild','strict');
     if (b.dataset.preset==='none'){ setSeg('case',''); setSeg('sort',''); $('findTxt').value=''; $('replTxt').value=''; }
     update(); toast(b.dataset.preset==='none' ? 'All options cleared' : 'Preset applied');
   }));
